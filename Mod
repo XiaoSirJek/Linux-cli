@@ -1,0 +1,67 @@
+#!/bin/bash
+# 权限验证函数
+function CheckPer() {
+    declare -i User_ID=$(id -u)
+    if test ${User_ID} != 0; then
+        echo '请使用 root 账户使用此脚本'
+        touch -p /var/log/conf_script/run.log
+        if [[ ! -e /var/log/conf_script/run.log ]]; then
+            echo "${Now_Time} run.log created successfully" >>/var/log/conf_script/run.log
+        fi
+        echo "${Now_Time} Permission Error" >>/var/log/conf_script/run.log
+        exit
+    fi
+
+}
+
+# 网卡配置函数
+function conf_net() {
+    # 提示用户欢迎使用此脚本进行网卡配置
+    echo "欢迎使用此脚本进行网卡配置"
+    # 定义一个普通数组
+    name=()
+    # 定义数组索引号初始值为 1
+    declare -i x=1
+    # 代码获取系统中所有的网卡信息，然后通过 for 迭代出来
+    for i in $(printf "$(ip addr | grep UP | cut -d " " -f 1,2 | sed 's/://g' | sed 's/ /(/')\n"); do
+        name[${x}]=${i}
+        ((x += 1))
+    done
+    # 输出刚才获取的所有网卡名
+    echo "${name[*]}"
+    # 用户进行选择
+    read -p "请选择需要进行配置的网卡序号:" Nums
+    # 开始判断用户输入是否正确
+    declare -i Nums
+    # 方便下面条件判断执行
+    declare -i n=$(expr ${#name[@]} + 1)
+    if [[ ${Nums} -gt 0 && ${Nums} -lt ${n} ]]; then
+        # 获取网卡 ID
+        net_uuid=$(nmcli connection | grep "${name[${Nums}]}" | awk '{print $2}' | grep -v 'UUID')
+        # 查找当前网卡模式
+        Nbootpro=$(sed -n -e '/BOOTPRO/p' ${cfg_file} | cut -d "=" -f 2 | sed 's/"//g')
+        # 查找网卡配置文件地址
+        cfg_file=$(find /etc/ | grep "${name[${Nums}]}")
+        read -p "更改ip获取模式:\n 1)静态 2)动态" BOOTPRO
+        while [[ ! ${BOOTPRO} -eq 1 || ${BOOTPRO} -eq 2 ]]; do
+            read -p "请输入正确的序号(当前模式:${Nbootpro}):" BOOTPRO
+        done
+        # 修改网卡模式
+        grep 'BOOTPRO' ${cfg_file} | sed -i "s/^\".*[pce]\"/static/" ${cfg_file}
+        # 检测UUID是否正确
+        if [[ ! $(grep "UUID" ${cfg_file} | cut -d "\"" -f 2) ]]; then
+            # 配置网卡 ID
+            sed -i "s/^UUID=.*/UUID=\"${net_uuid}\"/" ${cfg_file}
+        fi
+
+        echo "${Now_Time} 网卡${name[${Nums}]}配置修改成功" >>/var/log/run.log
+    else
+        declare -i e=1
+        while [[ ${e} -gt 0 && ${e} -lt 3 ]]; do
+            read -p "请重新选择网卡：" Nums
+            ((e += 1))
+        done
+        echo "${Now_Time} 用户操作错误" >>/var/log/run.log
+        exit
+    fi
+}
